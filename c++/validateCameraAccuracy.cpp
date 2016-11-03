@@ -1,9 +1,9 @@
 /*
 
 	開発環境
-	OS:		Windows7/10
-	IDE:	Visual studio 2013 Community
-	OpenCV:	2.4.10(NuGet)
+	OS:         Windows7/10
+	IDE:        Visual studio 2013 Community
+	OpenCV:     2.4.10(NuGet)
 
 	カメラの精度性能を検証する
 
