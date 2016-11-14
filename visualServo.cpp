@@ -1,8 +1,8 @@
 /**
-* @file main.cpp
+* @file visualServo.cpp
 * @brief ステレオカメラを用いた2駆動輪1キャスタ(2DW1C)方式ロボットの駆動制御
 * @author 13EJ034
-* @date 14.Nov.2016
+* @date 最終更新日 : 2016/11/14
 */
 
 #include <iostream>
@@ -117,6 +117,7 @@ int main(int argc, char *argv[]){
 
 	/*!
 	 * カメラ起動確認
+	 * 起動失敗時はエラー終了する
 	 */
 	if (!cap.isOpened()){
 		std::cout << "Camera could not found." << std::endl;
@@ -145,33 +146,29 @@ int main(int argc, char *argv[]){
 	 *  ウィンドウ構成
 	 ***********************************************/
 
-	const std::string windowName_l = "Left";
-	const std::string windowName_r = "Right";
+	const std::string windowName_l = "left";
+	const std::string windowName_r = "right";
 
 	cv::namedWindow(windowName_l, CV_WINDOW_NORMAL);
 	cv::namedWindow(windowName_r, CV_WINDOW_NORMAL);
 
-	cv::resizeWindow(windowName_l, 800, 450);
-	cv::resizeWindow(windowName_r, 800, 450);
+	cv::resizeWindow(windowName_l, cap_size.width * (5 / 8), cap_size.height * (5 / 8));
+	cv::resizeWindow(windowName_r, cap_size.width * (5 / 8), cap_size.height * (5 / 8));
 
 	cv::moveWindow(windowName_l, 100, 100);
-	cv::moveWindow(windowName_r, 100 + 850, 100);
+	cv::moveWindow(windowName_r, 100 + cap_size.width * (5 / 8), 100);
 
 	/********************************************//**
 	 *  ロボット構成
 	 ***********************************************/
 
-	//! ロボットの制御構造体
-	static RunCtrl run;
+	
+	static RunCtrl run;			//! ロボットの制御構造体
 
-	//! 右モータID
-	const int MotorID_r = 0;
+	const int MotorID_r = 0;	//! 右モータID
+	const int MotorID_l = 1;	//! 左モータID
 
-	//! 左モータID
-	const int MotorID_l = 1;
-
-	//! 基準PWM信号
-	int PWM = 200;
+	int PWM = 200;				//! 基準PWM信号
 
 	/*!
 	 * ロボット起動確認
@@ -213,37 +210,43 @@ int main(int argc, char *argv[]){
 		/*!
 		 * キャプチャ開始
 		 */
+
 		cv::Mat frame;
 		cap >> frame;
 		
 		/*!
 		 * ステレオイメージを左右に分割
 		 */
+
 		cv::Mat frame_l = frame(cv::Rect(0, 0, frame.cols / 2, frame.rows));
 		cv::Mat frame_r = frame(cv::Rect(frame.cols / 2, 0, frame.cols / 2, frame.rows));
 
 		/*!
 		 * 録画開始
 		 */
+
 		writer_l << frame_l;
 		writer_r << frame_r;
 
 		/*!
 		 * キャプチャを表示
 		 */
+
 		cv::imshow(windowName_l, frame_l);
 		cv::imshow(windowName_r, frame_r);
 
 		/*!
 		 * モータにPWM信号を送信
 		 */
+
 		run.setMotorPwm(MotorID_r, PWM);
 		run.setMotorPwm(MotorID_l, PWM);
 
 		/*!
 		 * 5[msec]キーボードから入力待機
-		 * 入力すると処理終了
+		 * 入力がある場合,処理終了
 		 */
+
 		if (cv::waitKey(5) > 0){
 			break;
 		}
@@ -253,6 +256,7 @@ int main(int argc, char *argv[]){
 	 * 急停止しないようPWM信号を段階的に減少
 	 * 8段階で減速
 	 */
+
 	for (int i = PWM; i >= 0; i=i-PWM/8){
 		run.setMotorPwm(MotorID_r, i);
 		run.setMotorPwm(MotorID_l, i);
