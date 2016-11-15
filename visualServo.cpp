@@ -2,7 +2,7 @@
 * @file visualServo.cpp
 * @brief ステレオカメラを用いた2駆動輪1キャスタ(2DW1C)方式ロボットの駆動制御
 * @author 13EJ034
-* @date 最終更新日 : 2016/11/14
+* @date 最終更新日 : 2016/11/15
 */
 
 #include <iostream>
@@ -10,8 +10,6 @@
 #include <opencv2/opencv.hpp>
 #include <runCtrl.h>
 #include <vutils.h>
-
-using namespace VXV;
 
 #pragma comment(lib, "vxv2.lib")
 
@@ -107,12 +105,12 @@ int main(int argc, char *argv[]){
 	 ***********************************************/
 
 	const double realTime_fps = 60.0;
-	cv::Size capSize(1280 * 2, 720);
+	cv::Size cap_size(1280 * 2, 720);
 
 	cv::VideoCapture cap;
 	cap.open(0);
-	cap.set(CV_CAP_PROP_FRAME_WIDTH, capSize.width);
-	cap.set(CV_CAP_PROP_FRAME_HEIGHT, capSize.height);
+	cap.set(CV_CAP_PROP_FRAME_WIDTH, cap_size.width);
+	cap.set(CV_CAP_PROP_FRAME_HEIGHT, cap_size.height);
 	cap.set(CV_CAP_PROP_FPS, realTime_fps);
 
 	/*!
@@ -134,13 +132,13 @@ int main(int argc, char *argv[]){
 	const std::string saveMovieName_l = "./Data/movie/result_l.avi";
 	const std::string saveMovieName_r = "./Data/movie/result_r.avi";
 
-	cv::Size videoSize(1280, 720);
+	cv::Size video_size(1280, 720);
 
 	const int codec = CV_FOURCC('X', 'V', 'I', 'D');
 	const double record_fps = 30.0;
 
-	cv::VideoWriter writer_l(saveMovieName_l, codec, record_fps, videoSize, true);
-	cv::VideoWriter writer_r(saveMovieName_r, codec, record_fps, videoSize, true);
+	cv::VideoWriter writer_l(saveMovieName_l, codec, record_fps, video_size, true);
+	cv::VideoWriter writer_r(saveMovieName_r, codec, record_fps, video_size, true);
 
 	/********************************************//**
 	 *  ウィンドウ構成
