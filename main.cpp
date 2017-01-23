@@ -2,7 +2,7 @@
 * @file main.cpp
 * @brief 深度情報から通過可能領域を判別する
 * @author 13ej034
-* @date 2016.12.24
+* @date 2017.1.19
 */
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -15,7 +15,7 @@ using namespace std;
 void detectSquare(Mat &InputOutputArray, vector<vector<Point>> InputContours,
 	chrono::time_point<chrono::system_clock, chrono::system_clock::duration> &InputStarttime);
 void estimateGravityCenter(Mat &InputOutputArray, vector<Point> &InputApprox);
-void changeToHueColor(Mat Imput,Mat &Output);
+void changeToHueColor(Mat Input, Mat &Output);
 
 // 四角形を検出
 void detectSquare(Mat &InputOutputArray, vector<vector<Point>> InputContours,
@@ -60,50 +60,48 @@ void estimateGravityCenter(Mat &InputOutputArray,vector<Point> &InputApprox){
 	putText(InputOutputArray, OutputGravity, mc_approx, CV_FONT_HERSHEY_SIMPLEX, 1, Scalar(200, 200, 0), 1, CV_AA);
 }
 
-// カラー化
-void changeToHueColor(Mat InputArray, Mat &OutputArray){
-	Mat channel[3];
-	channel[0] = Mat(InputArray.size(), CV_8UC1);
-	channel[1] = Mat(InputArray.size(), CV_8UC1, 255);
-	channel[2] = Mat(InputArray.size(), CV_8UC1, 255);
-	Mat hsv;
-	int d;
-	for (int i = 0; i < InputArray.cols; i++){
-		for (int j = 0; j < InputArray.rows; j++){
-			d = InputArray.at<uchar>(j, i);
-			channel[0].at<uchar>(j, i) = (255 - d) / 2;
+// 視差情報と深度情報を色で表現する
+void changeToHueColor(Mat Input,Mat &Output){
+	
+	Mat channels[3];
+	channels[0] = Mat(Input.size(), CV_8UC1);
+	channels[1] = Mat(Input.size(), CV_8UC1, 255);
+	channels[2] = Mat(Input.size(), CV_8UC1, 255);
+	Mat hsv_image;
+	for (int i = 0; i < Input.cols; i++){
+		for (int j = 0; j < Input.rows; j++){
+			int d = Input.at<uchar>(j, i);
+			channels[0].at<uchar>(j, i) = (255 - d) / 2;
 		}
-		merge(channel, 3, hsv);
-		cvtColor(hsv, OutputArray, CV_HSV2BGR);
 	}
+	merge(channels, 3, hsv_image);
+	cvtColor(hsv_image, Output, CV_HSV2BGR);
 }
-
-
 
 int main(int argc, const char* argv[])
 {
 	//内部パラメータ
-	const double fku_l = 717.720635659324;
-	const double fkv_l = 716.012167656560;
-	const double cx_l = 669.090942511285;
-	const double cy_l = 352.652835236136;
+	const double fku_l = 352.982274953091;
+	const double fkv_l = 351.250756508819;
+	const double cx_l = 345.906100335532;
+	const double cy_l = 184.892250145259;
 
-	const double fku_r = 718.249831068048;
-	const double fkv_r = 716.243173393304;
-	const double cx_r = 675.677025980489;
-	const double cy_r = 353.446662559247;
+	const double fku_r = 352.546641417207;
+	const double fkv_r = 350.889872835968;
+	const double cx_r = 347.909011932106;
+	const double cy_r = 184.782844969847;
 
 	Mat cameraParameter_l = (Mat_<double>(3, 3) << fku_l, 0., cx_l, 0., fkv_l, cy_l, 0., 0., 1.);
 	Mat cameraParameter_r = (Mat_<double>(3, 3) << fku_r, 0., cx_r, 0., fkv_r, cy_r, 0., 0., 1.);
 
 	// 歪み係数
-	const double k1_l = -0.159780304278012;
-	const double k2_l = 0.000684899487477897;
+	const double k1_l = -0.153606435507657;
+	const double k2_l = 0.00714696451127945;
 	const double p1_l = 0.0;
 	const double p2_l = 0.0;
 
-	const double k1_r = -0.161702334521399;
-	const double k2_r = 0.00604078284205945;
+	const double k1_r = -0.150252804108977;
+	const double k2_r = 0.00311575109211558;
 	const double p1_r = 0.0;
 	const double p2_r = 0.0;
 
@@ -113,26 +111,20 @@ int main(int argc, const char* argv[])
 	// 
 	VideoCapture cap(0);
 	if (!cap.isOpened()) return -1;
-	Size cap_size(2560, 720);
+	Size cap_size(1344, 376);
 	cap.set(CV_CAP_PROP_FRAME_WIDTH, cap_size.width);
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, cap_size.height);
 
-	namedWindow("Left", CV_WINDOW_AUTOSIZE | CV_WINDOW_FREERATIO);
-	namedWindow("Right", CV_WINDOW_AUTOSIZE | CV_WINDOW_FREERATIO);
-	namedWindow("depth", CV_WINDOW_AUTOSIZE | CV_WINDOW_FREERATIO);
-	namedWindow("depth clone", CV_WINDOW_AUTOSIZE | CV_WINDOW_FREERATIO);
-
-	int window_size = 3;
-	int minDisparity = 0;
-	int numDisparities = 48;
+	int minDisparity = 16 * 1;
+	int numDisparities = 16 * 4;
 	int blockSize = 3;
-	int P1 = 8 * 3 * window_size * window_size;
-	int P2 = 32 * 3 * window_size * window_size;
-	int disp12MaxDiff = 1;
+	int P1 = 0;
+	int P2 = 200;
+	int disp12MaxDiff = 0;
 	int preFilterCap = 0;
-	int uniquenessRatio = 10;
-	int speckleWindowSize = 100;
-	int speckleRange = 32;
+	int uniquenessRatio = 0;
+	int speckleWindowSize = 0;
+	int speckleRange = 1;
 
 	Ptr<StereoSGBM> sgbm = StereoSGBM::create(
 		minDisparity,
@@ -145,7 +137,9 @@ int main(int argc, const char* argv[])
 		uniquenessRatio,
 		speckleWindowSize,
 		speckleRange,
-		cv::StereoSGBM::MODE_SGBM_3WAY);
+		StereoSGBM::MODE_SGBM_3WAY);
+
+	Ptr<StereoBM> bm = StereoBM::create(0, 11);
 
 	double baseline = 120.0;
 
@@ -194,34 +188,95 @@ int main(int argc, const char* argv[])
 		//detectSquare(undistort_l, contours_l, startTime);
 		//detectSquare(undistort_r, contours_r, startTime);
 
-		// SGBM
-		
+		// 視差情報の取得
 		Mat disparity;
 		sgbm->compute(gray_l, gray_r, disparity);
+		//bm->compute(gray_l, gray_r, disparity);
+		// 確認用 不要時はコメントアウト
+		// ここから
 
-		Mat disparity_float;
-		disparity.convertTo(disparity_float, CV_32F);
+		//double max, min;
+		//minMaxLoc(disparity, &min, &max);
+		//Mat disparity_map;
+		//disparity.convertTo(disparity_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		//Mat disparity_map_hist;
+		//equalizeHist(disparity_map, disparity_map_hist);
+		//Mat disparity_map_Hue;
+		//changeToHueColor(disparity_map_hist, disparity_map_Hue);
 
-		// 3D
-		Mat depth = fku_l * baseline / disparity_float;
+		//　ここまで
+
+		// CV_16S -> CV_64F
+		Mat disparity_64f;
+		disparity.convertTo(disparity_64f, CV_64F);
+
+		// 深度情報に変換
+		Mat depth = fku_l * baseline / disparity_64f;
 		
-		// depthの切り抜き
+		// 確認用 不要時はコメントアウト
+		// ここから
+
+		//minMaxLoc(depth, &min, &max);
+		//Mat depth_map;
+		//depth.convertTo(depth_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		//Mat depth_map_hist;
+		//equalizeHist(depth_map, depth_map_hist);
+		//Mat depth_map_Hue;
+		//changeToHueColor(depth_map_hist, depth_map_Hue);
+
+		// ここまで
+
+		Mat X(frameSize, CV_64F);
+		Mat Y(frameSize, CV_64F);
+
+		// X,Yの情報を取得
+		
+		int zero_check = 0;
+		int count = 0;
+		int index = 0;
 		Mat depth_clone = depth.clone();
 		for (int y = 0; y < depth_clone.rows; y++){
-			uchar *ptr = depth_clone.ptr<uchar>(y);
+			double *dep = depth_clone.ptr<double>(y);
+			double *xx = X.ptr<double>(y);
+			double *yy = Y.ptr<double>(y);
 			for (int x = 0; x < depth_clone.cols; x++){
-				uchar dep = ptr[x];
-				double Z = dep;
-				//double X = (x - cx_l) * Z / fku_l;
-				//double Y = (y - cy_l) * Z / fkv_l;
-				if (Z <= 150 && Z >= 100 ){
+				double Z = dep[x];
+				xx[x] = x * Z / fku_l;
+				yy[x] = y * Z / fkv_l;
+
+				if (Z < 150 && Z > 20){
+					dep[x] = double(0);
 				}
-				else{
-					ptr[x] = uchar(0);
-				}
+
 			}
 		}
 		
+		double J = 0;		// 通過領域の判定式
+		double x_end = 0;	// 通過領域の終端
+		double x_start = 0;	// 通過領域の始端
+
+		for (int y = 0; y < depth_clone.rows; y++){
+			double *dep = depth_clone.ptr<double>(y);
+			for (int x = 0; x < depth_clone.cols - 1; x++){
+				J = dep[x + 1] - dep[x];
+				if (J > 0){
+					x_end = x;
+				}
+				else if (J < 0){
+					x_start = x;
+				}
+			}
+		}
+
+		//minMaxLoc(depth_clone, &min, &max);
+		//Mat depth_clone_map;
+		//depth_clone.convertTo(depth_clone_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		//Mat depth_clone_map_hist;
+		//equalizeHist(depth_clone_map, depth_clone_map_hist);
+		//Mat depth_clone_map_Hue;
+		//changeToHueColor(depth_clone_map_hist, depth_clone_map_Hue);
+
+
 		auto checkTime = chrono::system_clock::now();
 		double elapsedTime = chrono::duration_cast<std::chrono::milliseconds>(checkTime - startTime).count();
 		processingTime = elapsedTime - previousTime;
@@ -231,26 +286,20 @@ int main(int argc, const char* argv[])
 		processing << processingTime;
 		string elapsedTimeStr = "elapsed time : " + elapsed.str() + "msec";
 		string processingTimeStr = "processing time : " + processing.str() + "msec";
-		cout << elapsedTimeStr << endl
-			<< processingTimeStr << endl;
-
-		Mat depth_show;
-		depth.convertTo(depth_show, CV_32S);
-
-		Mat depth_clone_show;
-		depth_clone.convertTo(depth_clone_show, CV_32S);
+		cout << elapsedTimeStr << " " << processingTimeStr << endl;
 
 		imshow("Left", undistort_l);
 		imshow("Right", undistort_r);
-		imshow("depth", depth_show);
-		imshow("depth clone", depth_clone_show);
+		imshow("depth", depth_clone);
+		//imshow("disparity", disparity_map_Hue);
+		imshow("depth2", depth);
 
-		//string saveRgbFileName = "data/calib_left/frame" + elapsed.str() + ".png";
+		//string saveRgbFileName = "data/left/frame" + elapsed.str() + ".png";
 		//string saveDepthFileName = "data/calib_right/frame" + elapsed.str() + ".png";
 		//imwrite(saveRgbFileName, frame_l);
 		//imwrite(saveDepthFileName, frame_r);
 
-		if (waitKey(30) >= 0){
+		if (waitKey(15) == 13){
 			break;
 		}
 	}
