@@ -7,51 +7,100 @@ using namespace cv;
 
 int main(int argc, char **argv){
 
+	double B = 120.0;	// [mm]
+	double fx = 352.982274953091;
 
-	Mat depth_original = imread("data/depth/depth26510.png", 0);
-	Mat depth_copy = depth_original.clone();
-	int zero_count = 0;	// 連続した0のカウンタ
-	int index_now = 0;	// 0が途切れた最新の要素位置
-	int index_pre = 0;	// 0が途切れた前の要素位置
+	int minDisparity = 16 * 0;
+	int numDisparities = 16 * 4;
+	int blockSize = 3;
+	int P1 = 0;
+	int P2 = 200;
+	int disp12MaxDiff = 0;
+	int preFilterCap = 0;
+	int uniquenessRatio = 0;
+	int speckleWindowSize = 0;
+	int speckleRange = 1;
+
+	Ptr<StereoSGBM> sgbm = StereoSGBM::create(
+		minDisparity,
+		numDisparities,
+		blockSize,
+		P1,
+		P2,
+		disp12MaxDiff,
+		preFilterCap,
+		uniquenessRatio,
+		speckleWindowSize,
+		speckleRange,
+		StereoSGBM::MODE_SGBM_3WAY);
+
+	Mat undistort_l = imread("data/left.png", CV_LOAD_IMAGE_COLOR);
+	Mat undistort_r = imread("data/right.png", CV_LOAD_IMAGE_COLOR);
+
+	Mat gray_l, gray_r;
+	cvtColor(undistort_l, gray_l, CV_BGR2GRAY);
+	cvtColor(undistort_r, gray_r, CV_BGR2GRAY);
+
+	Mat disparity;
+	sgbm->compute(gray_l, gray_r, disparity);
+
+	Mat disparity_64f;
+	disparity.convertTo(disparity_64f, CV_64F);
+
+	Mat depth = fx * B / disparity_64f;
+
+	double J = 0;
+	double x_start = 0;
+	double x_end = 0;
+	double route_width = 0;			// [cm]
+	double vehicle_width = 31.20;	// [cm]
+	double reference = 0;
 
 	auto start = chrono::system_clock::now();
 
-	for (int y = 0; y < depth_copy.rows; y++){
-		uchar *ptr = depth_copy.ptr<uchar>(y);
-		for (int x = 0; x < depth_copy.cols; x++){
-			uchar Z = ptr[x];
-			if (Z >= 200 || Z <= 70){
-				ptr[x] = 0;
+	for (int y = 0; y < depth.rows; y++){
+
+		double *dis = disparity_64f.ptr<double>(y);
+		double *dep = depth.ptr<double>(y);
+
+		for (int x = 0; x < depth.cols; x++){
+
+			if (dep[x] > 200 || dep[x] < 70){
+				dep[x] = double(0);
 			}
-			if (y >= 500){
-				if (y % 20 == 0 && Z == 0){
 
-					// 領域を検出する処理
-					uchar check = ptr[x + 1] - ptr[x];	// 隣の要素との差
-					//cout << +check << endl;	// ucharを数値としてcoutしたい場合は check -> +check にすれば可能
-					if (check == 0){	// 差が0 つまり0が連続している
-						zero_count++;	// カウント
-					}
-					else{				// 差が0以外 つまり0が連続ではない
-						index_now = x;								// 途切れた要素の位置を取得
-						int width_pixel = index_now - index_pre;	// 0の連続している要素数を計算 zero_countだけでもいい? 要検証	
-						double X = width_pixel ;					// 三次元復元(X軸)の式 気が乗ったら書く
+			if (y >= 188 && y % 8 == 0){
 
-						zero_count = 0;	// カウントリセット
-						index_pre = index_now;	// 値の保存
+					J = dep[x + 1] - dep[x];
+
+					if (J > 0){
+						x_start = x;
 					}
+					else if (J < 0){
+						x_end = x;
+					}
+					
+					route_width = (x_end - x_start) * B / dis[x];
+
+					if (route_width > vehicle_width){
+						reference = (x_end - x_start) / 2;
+						Point vehicle_reference((int)reference, y);
+						circle(depth, vehicle_reference, 4, Scalar(0, 0, 200), 2, 4);
+					}
+
 				}
 			}
 		}
-	}
+	
 
 	auto end = chrono::system_clock::now();
-	uint64_t elapsed = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+	double elapsed = chrono::duration_cast<chrono::milliseconds>(end - start).count();
 	cout << "elapsed time : " << elapsed << "msec" << endl;
 
-	namedWindow("depth", CV_WINDOW_AUTOSIZE);
-	imshow("depth", depth_copy);
-	imwrite("data/depth_data.png", depth_copy);
+	//imshow("depth", disparity);
+
+	//imwrite("data/depth_data.png", depth);
+
 	waitKey(0);
 
 	return 0;
