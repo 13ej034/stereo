@@ -80,6 +80,7 @@ void changeToHueColor(Mat Input,Mat &Output){
 
 int main(int argc, const char* argv[])
 {
+
 	//内部パラメータ
 	const double fku_l = 352.982274953091;
 	const double fkv_l = 351.250756508819;
@@ -108,6 +109,12 @@ int main(int argc, const char* argv[])
 	Mat distCoeffs_l = (Mat_<double>(1, 4) << k1_l, k2_l, p1_l, p2_l);
 	Mat distCoeffs_r = (Mat_<double>(1, 4) << k1_r, k2_r, p1_r, p2_r);
 
+	// ロボットの大きさ
+	double W_r = 312.0;	// [mm]
+
+	// ロボットの目標点
+	double r = 0;
+
 	// 
 	VideoCapture cap(0);
 	if (!cap.isOpened()) return -1;
@@ -115,7 +122,7 @@ int main(int argc, const char* argv[])
 	cap.set(CV_CAP_PROP_FRAME_WIDTH, cap_size.width);
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, cap_size.height);
 
-	int minDisparity = 16 * 1;
+	int minDisparity = 16 * 0;
 	int numDisparities = 16 * 4;
 	int blockSize = 3;
 	int P1 = 0;
@@ -195,14 +202,14 @@ int main(int argc, const char* argv[])
 		// 確認用 不要時はコメントアウト
 		// ここから
 
-		//double max, min;
-		//minMaxLoc(disparity, &min, &max);
-		//Mat disparity_map;
-		//disparity.convertTo(disparity_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
-		//Mat disparity_map_hist;
-		//equalizeHist(disparity_map, disparity_map_hist);
-		//Mat disparity_map_Hue;
-		//changeToHueColor(disparity_map_hist, disparity_map_Hue);
+		double max, min;
+		minMaxLoc(disparity, &min, &max);
+		Mat disparity_map;
+		disparity.convertTo(disparity_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		Mat disparity_map_hist;
+		equalizeHist(disparity_map, disparity_map_hist);
+		Mat disparity_map_Hue;
+		changeToHueColor(disparity_map_hist, disparity_map_Hue);
 
 		//　ここまで
 
@@ -216,13 +223,13 @@ int main(int argc, const char* argv[])
 		// 確認用 不要時はコメントアウト
 		// ここから
 
-		//minMaxLoc(depth, &min, &max);
-		//Mat depth_map;
-		//depth.convertTo(depth_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
-		//Mat depth_map_hist;
-		//equalizeHist(depth_map, depth_map_hist);
-		//Mat depth_map_Hue;
-		//changeToHueColor(depth_map_hist, depth_map_Hue);
+		minMaxLoc(depth, &min, &max);
+		Mat depth_map;
+		depth.convertTo(depth_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		Mat depth_map_hist;
+		equalizeHist(depth_map, depth_map_hist);
+		Mat depth_map_Hue;
+		changeToHueColor(depth_map_hist, depth_map_Hue);
 
 		// ここまで
 
@@ -244,7 +251,7 @@ int main(int argc, const char* argv[])
 				xx[x] = x * Z / fku_l;
 				yy[x] = y * Z / fkv_l;
 
-				if (Z < 150 && Z > 20){
+				if (Z > 200 || Z < 0){
 					dep[x] = double(0);
 				}
 
@@ -254,9 +261,11 @@ int main(int argc, const char* argv[])
 		double J = 0;		// 通過領域の判定式
 		double x_end = 0;	// 通過領域の終端
 		double x_start = 0;	// 通過領域の始端
+		double W = 0;
 
 		for (int y = 0; y < depth_clone.rows; y++){
 			double *dep = depth_clone.ptr<double>(y);
+			double *dis = disparity_64f.ptr<double>(y);
 			for (int x = 0; x < depth_clone.cols - 1; x++){
 				J = dep[x + 1] - dep[x];
 				if (J > 0){
@@ -265,16 +274,21 @@ int main(int argc, const char* argv[])
 				else if (J < 0){
 					x_start = x;
 				}
+				W = (x_end - x_start)  *baseline / dis[x];
+				if (W > W_r){
+					r = (x_end - x_start) / 2;
+					//cout << "r : " << r << endl;
+				}
 			}
 		}
 
-		//minMaxLoc(depth_clone, &min, &max);
-		//Mat depth_clone_map;
-		//depth_clone.convertTo(depth_clone_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
-		//Mat depth_clone_map_hist;
-		//equalizeHist(depth_clone_map, depth_clone_map_hist);
-		//Mat depth_clone_map_Hue;
-		//changeToHueColor(depth_clone_map_hist, depth_clone_map_Hue);
+		minMaxLoc(depth_clone, &min, &max);
+		Mat depth_clone_map;
+		depth_clone.convertTo(depth_clone_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		Mat depth_clone_map_hist;
+		equalizeHist(depth_clone_map, depth_clone_map_hist);
+		Mat depth_clone_map_Hue;
+		changeToHueColor(depth_clone_map_hist, depth_clone_map_Hue);
 
 
 		auto checkTime = chrono::system_clock::now();
@@ -288,11 +302,12 @@ int main(int argc, const char* argv[])
 		string processingTimeStr = "processing time : " + processing.str() + "msec";
 		cout << elapsedTimeStr << " " << processingTimeStr << endl;
 
-		imshow("Left", undistort_l);
-		imshow("Right", undistort_r);
-		imshow("depth", depth_clone);
-		//imshow("disparity", disparity_map_Hue);
-		imshow("depth2", depth);
+		imshow("left.png", undistort_l);
+		imshow("right.png", undistort_r);
+		imshow("dep.png", depth_map_Hue);
+		imshow("dis.png", disparity_map_Hue);
+		imshow("dep_Raw.png", disparity);
+		imshow("dis_Raw.png", depth);
 
 		//string saveRgbFileName = "data/left/frame" + elapsed.str() + ".png";
 		//string saveDepthFileName = "data/calib_right/frame" + elapsed.str() + ".png";
@@ -300,6 +315,18 @@ int main(int argc, const char* argv[])
 		//imwrite(saveDepthFileName, frame_r);
 
 		if (waitKey(15) == 13){
+			string imageName_l = "data/left.png";
+			string imageName_r = "data/right.png";
+			string imageName_dis = "data/dis.png";
+			string imageName_dep = "data/dep.png";
+			string imageName_dis_Raw = "data/dis_raw.png";
+			string imageName_dep_Raw = "data/dep_raw.png";
+			imwrite(imageName_l, undistort_l);
+			imwrite(imageName_r, undistort_r);
+			imwrite(imageName_dis, disparity_map_Hue);
+			imwrite(imageName_dep, depth_map_Hue);
+			imwrite(imageName_dis_Raw, disparity);
+			imwrite(imageName_dep_Raw, depth);
 			break;
 		}
 	}
