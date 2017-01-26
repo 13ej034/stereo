@@ -8,6 +8,8 @@
 #include <iostream>
 #include <sstream>
 #include <chrono>
+#include <runCtrl.h>
+#include <vutils.h>
 
 using namespace cv;
 using namespace std;
@@ -110,7 +112,7 @@ int main(int argc, const char* argv[])
 	Mat distCoeffs_r = (Mat_<double>(1, 4) << k1_r, k2_r, p1_r, p2_r);
 
 	// ロボットの大きさ
-	double W_r = 312.0;	// [mm]
+	double width_robot = 31.20;	// [cm]
 
 	// ロボットの目標点
 	double r = 0;
@@ -146,9 +148,27 @@ int main(int argc, const char* argv[])
 		speckleRange,
 		StereoSGBM::MODE_SGBM_3WAY);
 
-	Ptr<StereoBM> bm = StereoBM::create(0, 11);
+	Ptr<StereoBM> bm = StereoBM::create(0, 15);
 
 	double baseline = 120.0;
+
+	double error = 0;
+	double pre_error = 0;
+	double Kp = 0.2;
+	double Ki = 0.15;
+	double Kd = 1;
+	double P = 0;
+	double I = 0;
+	double U = 0;
+
+	static RunCtrl run;
+	run.connect("COM6");
+
+	const int motor_r = 0;
+	const int motor_l = 1;
+
+	run.setWheelVel(motor_r, 5);
+	run.setWheelVel(motor_l, 5);
 
 	auto startTime = chrono::system_clock::now();	// 処理開始時間
 	double processingTime = 0;
@@ -202,14 +222,14 @@ int main(int argc, const char* argv[])
 		// 確認用 不要時はコメントアウト
 		// ここから
 
-		double max, min;
-		minMaxLoc(disparity, &min, &max);
-		Mat disparity_map;
-		disparity.convertTo(disparity_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
-		Mat disparity_map_hist;
-		equalizeHist(disparity_map, disparity_map_hist);
-		Mat disparity_map_Hue;
-		changeToHueColor(disparity_map_hist, disparity_map_Hue);
+		//double max, min;
+		//minMaxLoc(disparity, &min, &max);
+		//Mat disparity_map;
+		//disparity.convertTo(disparity_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		//Mat disparity_map_hist;
+		//equalizeHist(disparity_map, disparity_map_hist);
+		//Mat disparity_map_Hue;
+		//changeToHueColor(disparity_map_hist, disparity_map_Hue);
 
 		//　ここまで
 
@@ -223,72 +243,118 @@ int main(int argc, const char* argv[])
 		// 確認用 不要時はコメントアウト
 		// ここから
 
-		minMaxLoc(depth, &min, &max);
-		Mat depth_map;
-		depth.convertTo(depth_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
-		Mat depth_map_hist;
-		equalizeHist(depth_map, depth_map_hist);
-		Mat depth_map_Hue;
-		changeToHueColor(depth_map_hist, depth_map_Hue);
+		//minMaxLoc(depth, &min, &max);
+		//Mat depth_map;
+		//depth.convertTo(depth_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		//Mat depth_map_hist;
+		//equalizeHist(depth_map, depth_map_hist);
+		//Mat depth_map_Hue;
+		//changeToHueColor(depth_map_hist, depth_map_Hue);
 
 		// ここまで
 
-		Mat X(frameSize, CV_64F);
-		Mat Y(frameSize, CV_64F);
-
 		// X,Yの情報を取得
 		
-		int zero_check = 0;
-		int count = 0;
-		int index = 0;
 		Mat depth_clone = depth.clone();
 		for (int y = 0; y < depth_clone.rows; y++){
 			double *dep = depth_clone.ptr<double>(y);
-			double *xx = X.ptr<double>(y);
-			double *yy = Y.ptr<double>(y);
+			double *dis = depth_clone.ptr<double>(y);
 			for (int x = 0; x < depth_clone.cols; x++){
-				double Z = dep[x];
-				xx[x] = x * Z / fku_l;
-				yy[x] = y * Z / fkv_l;
-
-				if (Z > 200 || Z < 0){
-					dep[x] = double(0);
-				}
-
+				if (dep[x] < 0) dep[x] = double(0);
 			}
 		}
+
+		Mat cut = depth_clone(Rect(0, depth_clone.rows - (depth_clone.rows / 2), depth_clone.cols, depth_clone.rows / 2));
 		
-		double J = 0;		// 通過領域の判定式
-		double x_end = 0;	// 通過領域の終端
-		double x_start = 0;	// 通過領域の始端
-		double W = 0;
 
-		for (int y = 0; y < depth_clone.rows; y++){
-			double *dep = depth_clone.ptr<double>(y);
-			double *dis = disparity_64f.ptr<double>(y);
-			for (int x = 0; x < depth_clone.cols - 1; x++){
-				J = dep[x + 1] - dep[x];
-				if (J > 0){
-					x_end = x;
+		double ave[56] = { 0 };
+		double ave_sum = 0;
+		double sum = 0;
+		double element_count = 0;
+
+		for (int ave_num = 0; ave_num < 56; ave_num++){
+			for (int y = 0; y < cut.rows; y++){
+				double *cc = cut.ptr<double>(y);
+				for (int x = (cut.cols / 56) * ave_num; x < (cut.cols / 56)*(ave_num + 1); x++){
+					sum = sum + cc[x];
+					element_count++;
 				}
-				else if (J < 0){
-					x_start = x;
+			}
+			ave[ave_num] = sum / element_count;
+			sum = 0;
+			element_count = 0;
+			ave_sum = ave_sum + ave[ave_num];
+		}
+
+		double ave_ave = ave_sum / 56;
+
+		for (int ave_num = 0; ave_num < 56; ave_num++){
+			if (ave[ave_num] > ave_ave) ave[ave_num] = 0;
+		}
+
+		double J = 0;
+		double cco = 1;
+		double cco_max = 0;
+		double cco_num = 0;
+
+		for (int ave_num = 0; ave_num < 55; ave_num++){
+			J = ave[ave_num + 1] - ave[ave_num];
+			if (J == 0){
+				cco++;
+
+				if (cco_max < cco){ 
+					cco_max = cco;
+					cco_num = ave_num + 1;
 				}
-				W = (x_end - x_start)  *baseline / dis[x];
-				if (W > W_r){
-					r = (x_end - x_start) / 2;
-					//cout << "r : " << r << endl;
-				}
+
+			}
+			else{
+				cco = 0;
 			}
 		}
 
-		minMaxLoc(depth_clone, &min, &max);
-		Mat depth_clone_map;
-		depth_clone.convertTo(depth_clone_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
-		Mat depth_clone_map_hist;
-		equalizeHist(depth_clone_map, depth_clone_map_hist);
-		Mat depth_clone_map_Hue;
-		changeToHueColor(depth_clone_map_hist, depth_clone_map_Hue);
+		double start = cco_num - cco_max; // 始点
+
+		double x_s = (start * 12) * cut.ptr<double>(cut.rows / 2)[(int)start * 12] / fku_l;
+		double x_e = (((cco_num + 1) * 12) - 1) * cut.ptr<double>(cut.rows / 2)[(((int)cco_num + 1) * 12) - 1] / fku_l;
+
+		double width_x = x_e - x_s;
+
+		if (width_x > width_robot){
+			r = (((((cco_num + 1) * 12) - 1) - (start * 12)) / 2 ) +(start * 12);
+			Point run_reference(r, cut.rows / 2);
+			circle(cut, run_reference, 60, Scalar(0, 0, 200), 5, CV_AA);
+		}
+
+		auto sampling = chrono::system_clock::now();
+		double sampling_time = chrono::duration_cast<std::chrono::milliseconds>(sampling - startTime).count();
+
+		pre_error = error;
+		error = cx_l - r;
+
+		P = Kp * error;
+		I = Ki * (((error + pre_error) * sampling_time * pow(10,-3)) / 2);
+
+		U = P + I;
+
+		double D_l = 200 + U;
+		double D_r = 200 - U;
+
+		run.setMotorPwm(motor_r, D_l);
+		run.setMotorPwm(motor_l, D_r);
+
+		//cout << "error sum : " << error << endl
+		//	<< "error now : " << error - pre_error << endl
+		//	<<"Left Moter Output : " << D_l << endl
+		//	<< "Right Motor Output : " << D_r << endl;
+
+		//minMaxLoc(depth_clone, &min, &max);
+		//Mat depth_clone_map;
+		//depth_clone.convertTo(depth_clone_map, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+		//Mat depth_clone_map_hist;
+		//equalizeHist(depth_clone_map, depth_clone_map_hist);
+		//Mat depth_clone_map_Hue;
+		//changeToHueColor(depth_clone_map_hist, depth_clone_map_Hue);
 
 
 		auto checkTime = chrono::system_clock::now();
@@ -304,10 +370,10 @@ int main(int argc, const char* argv[])
 
 		imshow("left.png", undistort_l);
 		imshow("right.png", undistort_r);
-		imshow("dep.png", depth_map_Hue);
-		imshow("dis.png", disparity_map_Hue);
-		imshow("dep_Raw.png", disparity);
-		imshow("dis_Raw.png", depth);
+		//imshow("depth", depth);
+		//imshow("dis.png", disparity_map_Hue);
+		imshow("cut", cut);
+		//imshow("depth_clone", depth_clone);
 
 		//string saveRgbFileName = "data/left/frame" + elapsed.str() + ".png";
 		//string saveDepthFileName = "data/calib_right/frame" + elapsed.str() + ".png";
@@ -315,20 +381,24 @@ int main(int argc, const char* argv[])
 		//imwrite(saveDepthFileName, frame_r);
 
 		if (waitKey(15) == 13){
-			string imageName_l = "data/left.png";
-			string imageName_r = "data/right.png";
-			string imageName_dis = "data/dis.png";
-			string imageName_dep = "data/dep.png";
-			string imageName_dis_Raw = "data/dis_raw.png";
-			string imageName_dep_Raw = "data/dep_raw.png";
-			imwrite(imageName_l, undistort_l);
-			imwrite(imageName_r, undistort_r);
-			imwrite(imageName_dis, disparity_map_Hue);
-			imwrite(imageName_dep, depth_map_Hue);
-			imwrite(imageName_dis_Raw, disparity);
-			imwrite(imageName_dep_Raw, depth);
+			//string imageName_l = "data/left.png";
+			//string imageName_r = "data/right.png";
+			//string imageName_dis = "data/dis.png";
+			//string imageName_dep = "data/dep.png";
+			//string imageName_dis_Raw = "data/dis_raw.png";
+			//string imageName_dep_Raw = "data/dep_raw.png";
+			//imwrite(imageName_l, undistort_l);
+			//imwrite(imageName_r, undistort_r);
+			//imwrite(imageName_dis, disparity_map_Hue);
+			//imwrite(imageName_dep, depth_map_Hue);
+			//imwrite(imageName_dis_Raw, disparity);
+			//imwrite(imageName_dep_Raw, depth);
 			break;
 		}
 	}
+
+	run.setMotorPwm(motor_r, 0);
+	run.setMotorPwm(motor_l, 0);
+
 	return 0;
 }
