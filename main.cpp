@@ -43,7 +43,7 @@ int main(int argc, const char* argv[])
 	Mat distCoeffs_l = (Mat_<double>(1, 4) << k1_l, k2_l, p1_l, p2_l);
 	Mat distCoeffs_r = (Mat_<double>(1, 4) << k1_r, k2_r, p1_r, p2_r);
 
-	double width_robot = 40.0;	// [cm]
+	double width_robot = 46.0;	// [cm]
 
 	double r = 0;
 
@@ -86,9 +86,9 @@ int main(int argc, const char* argv[])
 
 	double error = 0;
 	double pre_error = 0;
-	double Kp = 0.08;
-	double Ki = 0.02;
-	double Kd = 0.01;
+	double Kp = 0.10;
+	double Ki = 0.05;
+	double Kd = 0.02;
 	double P = 0;
 	double I = 0;
 	double D = 0;
@@ -96,7 +96,7 @@ int main(int argc, const char* argv[])
 	double integral = 0;
 	int lr = 0;
 
-	int robot_switch = 1;
+	int robot_switch = 0;
 
 	static RunCtrl run;
 	run.connect("COM6");
@@ -156,7 +156,7 @@ int main(int argc, const char* argv[])
 			double *dep = depth_clone.ptr<double>(y);
 			double *dis = depth_clone.ptr<double>(y);
 			for (int x = 0; x < depth_clone.cols; x++){
-				if (dep[x] > 200 || dep[x] < 30) dep[x] = double(500);
+				if (dep[x] > 250 || dep[x] < 30) dep[x] = double(0);
 			}
 		}
 
@@ -227,7 +227,7 @@ int main(int argc, const char* argv[])
 
 			pre_error = error;
 			error = cx_l - r;
-			integral = ((error + pre_error) * sampling_time * pow(10, -3)) / 2;
+			integral += ((error + pre_error) * sampling_time * pow(10, -3)) / 2;
 
 			P = Kp * error;
 			I = Ki * integral;
@@ -235,8 +235,8 @@ int main(int argc, const char* argv[])
 
 			U = P + I + D;
 
-			double D_l = 100 - U;
-			double D_r = 100 + U;
+			double D_l = 200 - U;
+			double D_r = 200 + U;
 
 			if (robot_switch == 0){
 				cout << "error sum : " << error << endl
@@ -266,7 +266,6 @@ int main(int argc, const char* argv[])
 
 		imshow("left", undistort_l);
 		imshow("right", undistort_r);
-		imshow("cut", cut);
 
 		if (waitKey(15) == 13){
 			break;
