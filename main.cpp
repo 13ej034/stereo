@@ -17,44 +17,44 @@ using namespace std;
 int main(int argc, const char* argv[])
 {
 
-	const double fku_l = 720.662839213821;
-	const double fkv_l = 718.406797571986;
-	const double cx_l = 292.267044761211;
-	const double cy_l = 242.558077956841;
+	const double fku_l = 353.600559219653;
+	const double fkv_l = 352.562464480179;
+	const double cx_l = 320.306982522657;
+	const double cy_l = 191.383465238258;
 
-	const double fku_r = 723.920825845424;
-	const double fkv_r = 722.036833934553;
-	const double cx_r = 314.804058188331;
-	const double cy_r = 219.792366985127;
+	const double fku_r = 355.659530311593;
+	const double fkv_r = 354.734600040007;
+	const double cx_r = 335.004584045585;
+	const double cy_r = 180.558275004874;
 
 	Mat cameraParameter_l = (Mat_<double>(3, 3) << fku_l, 0., cx_l, 0., fkv_l, cy_l, 0., 0., 1.);
 	Mat cameraParameter_r = (Mat_<double>(3, 3) << fku_r, 0., cx_r, 0., fkv_r, cy_r, 0., 0., 1.);
 
-	const double k1_l = -0.106670002338667;
-	const double k2_l = -0.0442327810840701;
+	const double k1_l = -0.173747838157089;
+	const double k2_l = 0.0272481881774572;
 	const double p1_l = 0.0;
 	const double p2_l = 0.0;
 
-	const double k1_r = -0.130118213894710;
-	const double k2_r = 0.0802158917652363;
+	const double k1_r = -0.176327723277872;
+	const double k2_r = 0.0286008197857787;
 	const double p1_r = 0.0;
 	const double p2_r = 0.0;
 
 	Mat distCoeffs_l = (Mat_<double>(1, 4) << k1_l, k2_l, p1_l, p2_l);
 	Mat distCoeffs_r = (Mat_<double>(1, 4) << k1_r, k2_r, p1_r, p2_r);
 
-	double width_robot = 46.0;	// [cm]
+	double width_robot = 31.0;	// [cm]
 
 	double r = 0;
 
 	VideoCapture cap(0);
 	if (!cap.isOpened()) return -1;
-	Size cap_size(1280, 480);
+	Size cap_size(1344, 376);
 	cap.set(CV_CAP_PROP_FRAME_WIDTH, cap_size.width);
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, cap_size.height);
 
 	VideoWriter sceneVideo("scene.avi", VideoWriter::fourcc('M', '4', 'S', '2'), 10, Size(640,480),true);
-	if (!sceneVideo.isOpened()){ return -1; }
+	if (!sceneVideo.isOpened()) return -1;
 
 	int minDisparity = 16 * 0;
 	int numDisparities = 16 * 4;
@@ -96,7 +96,7 @@ int main(int argc, const char* argv[])
 	double integral = 0;
 	int lr = 0;
 
-	int robot_switch = 0;
+	int robot_switch = 1;
 
 	static RunCtrl run;
 	run.connect("COM6");
@@ -112,6 +112,9 @@ int main(int argc, const char* argv[])
 		run.setWheelVel(motor_r, 5);
 		run.setWheelVel(motor_l, 5);
 	}
+
+	double D_r = 0;
+	double D_l = 0;
 
 	auto startTime = chrono::system_clock::now();
 	double processingTime = 0;
@@ -152,39 +155,38 @@ int main(int argc, const char* argv[])
 		// —Ìˆæ”FŽ¯
 		
 		Mat depth_clone = depth.clone();
-		for (int y = 0; y < depth_clone.rows; y++){
-			double *dep = depth_clone.ptr<double>(y);
-			double *dis = depth_clone.ptr<double>(y);
+		Mat cut = depth_clone(Rect(64, depth_clone.rows - (depth_clone.rows / 2), depth_clone.cols - 64, depth_clone.rows / 2));
+
+		for (int y = 0; y < cut.rows; y++){
+			double *cutp = cut.ptr<double>(y);
 			for (int x = 0; x < depth_clone.cols; x++){
-				if (dep[x] > 250 || dep[x] < 30) dep[x] = double(0);
+				if (cutp[x] < 30) cutp[x] = double(0);
 			}
 		}
 
-		Mat cut = depth_clone(Rect(70, depth_clone.rows - (depth_clone.rows / 2), depth_clone.cols - 70, depth_clone.rows / 2));
-
-		double ave[57] = { 0 };
+		double ave[608] = { 0 };
 		double ave_sum = 0;
 		double sum = 0;
 		double element_count = 0;
 
-		for (int ave_num = 0; ave_num < 57; ave_num++){
+		for (int ave_num = 0; ave_num < 608; ave_num++){
 			for (int y = 0; y < cut.rows; y++){
 				double *cc = cut.ptr<double>(y);
-				for (int x = (cut.cols / 57) * ave_num; x < (cut.cols / 57)*(ave_num + 1); x++){
-					sum = sum + cc[x];
+				for (int x = (cut.cols / 608) * ave_num; x < (cut.cols / 608)*(ave_num + 1); x++){
+					sum += cc[x];
 					element_count++;
 				}
 			}
 			ave[ave_num] = sum / element_count;
 			sum = 0;
 			element_count = 0;
-			ave_sum = ave_sum + ave[ave_num];
+			ave_sum += ave[ave_num];
 		}
 
-		double ave_ave = ave_sum / 57;
+		double ave_ave = ave_sum / 608;
 
-		for (int ave_num = 0; ave_num < 57; ave_num++){
-			if (ave[ave_num] > 300) ave[ave_num] = 0;
+		for (int ave_num = 0; ave_num < 608; ave_num++){
+			if (ave[ave_num] > ave_ave) ave[ave_num] = 0;
 		}
 
 		double J = 0;
@@ -192,7 +194,7 @@ int main(int argc, const char* argv[])
 		double cco_max = 0;
 		double cco_num = 0;
 
-		for (int ave_num = 0; ave_num < 57; ave_num++){
+		for (int ave_num = 0; ave_num < 608; ave_num++){
 			J = ave[ave_num + 1] - ave[ave_num];
 			if (ave[ave_num] == 0){
 				cco++;
@@ -210,16 +212,14 @@ int main(int argc, const char* argv[])
 
 		double start = cco_num - cco_max;
 
-		double x_s = (start * 10) * cut.ptr<double>(cut.rows / 2)[(int)start * 10] / fku_l;
-		double x_e = (((cco_num + 1) * 10) - 1) * cut.ptr<double>(cut.rows / 2)[(((int)cco_num + 1) * 10) - 1] / fku_l;
+		double x_s = start * cut.ptr<double>(cut.rows / 2)[(int)start] / fku_l;
+		double x_e = (cco_num) * cut.ptr<double>(cut.rows / 2)[(int)cco_num] / fku_l;
 
 		double width_x = abs(x_e - x_s);
 
-
-
 		if (width_x > width_robot){
-			r = (((((cco_num + 1) * 10) - 1) + (start * 10)) / 2) ;
-			Point run_reference(r, undistort_l.rows / 2);
+			r = ( (cco_num + start) / 2 ) - 30;
+			Point run_reference(r, undistort_l.rows * 3 / 4);
 			circle(undistort_l, run_reference, 15, Scalar(0, 0, 200), 5, CV_AA);
 
 			auto sampling = chrono::system_clock::now();
@@ -235,8 +235,8 @@ int main(int argc, const char* argv[])
 
 			U = P + I + D;
 
-			double D_l = 200 - U;
-			double D_r = 200 + U;
+			D_l = 180 - U;
+			D_r = 180 + U;
 
 			if (robot_switch == 0){
 				cout << "error sum : " << error << endl
@@ -248,8 +248,13 @@ int main(int argc, const char* argv[])
 				run.setMotorPwm(motor_r, D_r);
 				run.setMotorPwm(motor_l, D_l);
 			}
-
 		}
+		else{
+			double D_r_red = D_r - 20;
+			double D_l_red = D_l - 20;
+			run.setMotorPwm(motor_r, D_r_red);
+			run.setMotorPwm(motor_l, D_l_red);
+        }
 
 		sceneVideo << undistort_l;
 
@@ -265,7 +270,8 @@ int main(int argc, const char* argv[])
 		cout << elapsedTimeStr << " " << processingTimeStr << endl;
 
 		imshow("left", undistort_l);
-		imshow("right", undistort_r);
+		//imshow("right", undistort_r);
+		imshow("dep", cut);
 
 		if (waitKey(15) == 13){
 			break;
