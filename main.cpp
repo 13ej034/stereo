@@ -6,6 +6,7 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include <chrono>
 #include <runCtrl.h>
 #include <vutils.h>
@@ -37,6 +38,10 @@ void to_Color(Mat InputDepthArray, Mat &OutputDepthmapArray){
 
 int main(int argc, const char* argv[])
 {
+	ofstream reference("reference.csv");
+	ofstream duty_left("duty_left.csv");
+	ofstream duty_right("duty_right.csv");
+
 	// Setting camera intrinsic parameter and distortion coefficient
 	// Left camera intrinsic parameter
 	const double fku_l = 353.600559219653;
@@ -116,9 +121,9 @@ int main(int argc, const char* argv[])
 	double width_robot = 31.0;	// [cm]
 	double error = 0;
 	double pre_error = 0;
-	double Kp = 0.10;
-	double Ki = 0.05;
-	double Kd = 0.02;
+	double Kp = 0.05;
+	double Ki = 0.02;
+	double Kd = 0.01;
 	double P = 0;
 	double I = 0;
 	double D = 0;
@@ -206,18 +211,18 @@ int main(int argc, const char* argv[])
 		vector<double> ave;
 		double ave_total = 0;
 		double total = 0;
-		int element_mum = 0;
+		int element_num = 0;
 
 		for (int x = 0; x < cut.cols; x++){
 			for (int y = 0; y < cut.rows; y++){
 					total += cut.ptr<double>(y)[x];	// total of element values
-					element_mum++;					// total number of element
+					element_num++;					// total number of element
 			}
-			double ave_comp = total / (double)element_mum;	// average of rows
+			double ave_comp = total / (double)element_num;	// average of rows
 			ave.push_back(ave_comp);
 			ave_total += ave_comp;							// total of average value
 			total = 0;										// reset
-			element_mum = 0;								// reset
+			element_num = 0;								// reset
 		}
 
 		double ave_ave = ave_total / cut.cols;			// average of average value
@@ -254,13 +259,13 @@ int main(int argc, const char* argv[])
 		int start = zero_count_num - zero_count_max;	// maximum value pixel's start index
 
 		// 11.compute 3D width
-		double x_s = start * depth.ptr<double>(depth.rows * 3 / 4)[start] / fku_l;
-		double x_e = zero_count_num * cut.ptr<double>(cut.rows *3 / 4)[zero_count_num] / fku_l;
+		double x_s = start * cut.ptr<double>(cut.rows / 2)[start] / fku_l;
+		double x_e = zero_count_num * cut.ptr<double>(cut.rows / 2)[zero_count_num] / fku_l;
 		double width_x = abs(x_e - x_s);
 
 		// 12.compute reference 
 		if (width_x > width_robot){
-			r = ( (zero_count_num + start) / 2 ) - 30;
+			r = ( (zero_count_num + start) / 2 );
 			Point run_reference(r, undistorted_l.rows * 3 / 4);
 			circle(undistorted_l, run_reference, 15, Scalar(0, 0, 200), 5, CV_AA);
 
@@ -289,8 +294,8 @@ int main(int argc, const char* argv[])
 					<< "Right Motor Output : " << D_r << endl;
 			}
 			else{
-				run.setMotorPwm(motor_r, D_r);
-				run.setMotorPwm(motor_l, D_l);
+				run.setMotorPwm(motor_r, (uchar)D_r);
+				run.setMotorPwm(motor_l, (uchar)D_l);
 			}
 		}
 		else{	// If r not detected, lower the robot speed 
@@ -301,8 +306,8 @@ int main(int argc, const char* argv[])
 					<< "Right Motor Output : " << D_r << endl;
 			}
 			else{
-				double D_r_red = D_r - 20;
-				double D_l_red = D_l - 20;
+				uchar D_r_red = (uchar)D_r - 20;
+				uchar D_l_red = (uchar)D_l - 20;
 				run.setMotorPwm(motor_r, D_r_red);
 				run.setMotorPwm(motor_l, D_l_red);
 			}
@@ -322,6 +327,10 @@ int main(int argc, const char* argv[])
 		string elapsedTimeStr = "elapsed time : " + elapsed.str() + "msec";
 		string processingTimeStr = "processing time : " + processing.str() + "msec";
 		cout << elapsedTimeStr << " " << processingTimeStr << endl;
+
+		reference << elapsedTime << "," << r << endl;
+		duty_left << elapsedTime << "," << D_l << endl;
+		duty_right << elapsedTime << "," << D_r << endl;
 
 		// preview 
 		//Mat depth_map;
