@@ -13,6 +13,28 @@
 using namespace cv;
 using namespace std;
 
+// To Color Depth image
+void to_Color(Mat InputDepthArray, Mat &OutputDepthmapArray){
+	double min, max;
+	minMaxLoc(InputDepthArray, &min, &max);
+	InputDepthArray.convertTo(InputDepthArray, CV_8UC1, 255 / (max - min), -255 * min / (max - min));
+	equalizeHist(InputDepthArray, InputDepthArray);
+	Mat channel[3];
+	channel[0] = Mat(InputDepthArray.size(), CV_8UC1);
+	channel[1] = Mat(InputDepthArray.size(), CV_8UC1, 255);
+	channel[2] = Mat(InputDepthArray.size(), CV_8UC1, 255);
+	Mat hsv;
+	int d;
+	for (int y = 0; y < InputDepthArray.rows; y++){
+		for (int x = 0; x < InputDepthArray.cols; x++){
+			d = InputDepthArray.ptr<uchar>(y)[x];
+			channel[0].ptr<uchar>(y)[x] = (255 - d) / 2;
+		}
+		merge(channel, 3, hsv);
+		cvtColor(hsv, OutputDepthmapArray, CV_HSV2BGR);
+	}
+}
+
 int main(int argc, const char* argv[])
 {
 	// Setting camera intrinsic parameter and distortion coefficient
@@ -66,7 +88,7 @@ int main(int argc, const char* argv[])
 	int numDisparities = 16 * 4;
 	int blockSize = 3;
 	int P1 = 0;
-	int P2 = 200;
+	int P2 = 0;
 	int disp12MaxDiff = 0;
 	int preFilterCap = 0;
 	int uniquenessRatio = 0;
@@ -108,7 +130,7 @@ int main(int argc, const char* argv[])
 
 	// Setting robot
 	// 1 : turn on , 0 : turn off
-	int robot_switch = 1;
+	int robot_switch = 0;
 	static RunCtrl run;
 	run.connect("COM6");
 	const int motor_r = 0;
@@ -161,6 +183,9 @@ int main(int argc, const char* argv[])
 		Mat disparity_64f;
 		disparity.convertTo(disparity_64f, CV_64F);
 
+		// disparity / 16
+		//disparity_64f = disparity_64f / 16;
+
 		// 6.Compute depth
 		Mat depth = fku_l * baseline / disparity_64f;
 		
@@ -174,36 +199,35 @@ int main(int argc, const char* argv[])
 		for (int y = 0; y < cut.rows; y++){
 			double *cutp = cut.ptr<double>(y);
 			for (int x = 0; x < depth_clone.cols; x++){
-				if (cutp[x] < 30) cutp[x] = double(0);
+				if (cutp[x] <= 0) cutp[x] = double(500);
 			}
 		}
+		
 
 		// 9.Compute element average
-		double ave[608] = { 0 };
-		double ave_sum = 0;
-		double sum = 0;
-		double element_count = 0;
+		vector<double> ave = { 0 };
+		double ave_total = 0;
+		double total = 0;
+		int element_mum = 0;
 
-		for (int ave_num = 0; ave_num < 608; ave_num++){
+		for (int x = 0; x < cut.cols; x++){
 			for (int y = 0; y < cut.rows; y++){
-				double *cut_elem = cut.ptr<double>(y);
-				for (int x = ave_num; x < ave_num + 1; x++){
-					sum += cut_elem[x];	// sum total element value
-					element_count++;	// count element number
-				}
+					total += cut.ptr<double>(y)[x];	// total of element values
+					element_mum++;					// total number of element
 			}
-			ave[ave_num] = sum / element_count; // compute sum average
-			sum = 0;							// reset
-			element_count = 0;					// reset
-			ave_sum += ave[ave_num];			// sum total average value
+			double ave_comp = total / (double)element_mum;	// average of rows
+			ave.push_back = ave_comp;
+			ave_total += ave_comp;							// total of average value
+			total = 0;										// reset
+			element_mum = 0;								// reset
 		}
 
-		double ave_ave = ave_sum / 608;			// compute ave[ave_num] average
+		double ave_ave = ave_total / cut.cols;			// average of average value
 
 		// 10.Search for places where the largest width exists
 		// If ave array elements > ave_ave, the elements change to 0
 		// 0 is judged as a passable area
-		for (int ave_num = 0; ave_num < 608; ave_num++){
+		for (int ave_num = 0; ave_num < cut.cols; ave_num++){
 			if (ave[ave_num] > ave_ave) ave[ave_num] = 0;
 		}
 
@@ -229,7 +253,7 @@ int main(int argc, const char* argv[])
 			}
 		}
 
-		double start = zero_count_num - zero_count_max;	// maximum value pixel's start index
+		int start = zero_count_num - zero_count_max;	// maximum value pixel's start index
 
 		// 11.compute 3D width
 		double x_s = start * depth.ptr<double>(depth.rows * 3 / 4)[start] / fku_l;
@@ -238,9 +262,9 @@ int main(int argc, const char* argv[])
 
 		// 12.compute reference 
 		if (width_x > width_robot){
-			r = ( (cco_num + start) / 2 ) - 30;
+			r = ( (zero_count_num + start) / 2 ) - 30;
 			Point run_reference(r, undistorted_l.rows * 3 / 4);
-			circle(undistort_l, run_reference, 15, Scalar(0, 0, 200), 5, CV_AA);
+			circle(undistorted_l, run_reference, 15, Scalar(0, 0, 200), 5, CV_AA);
 
 			auto sampling = chrono::system_clock::now();
 			double sampling_time = chrono::duration_cast<std::chrono::milliseconds>(sampling - startTime).count();
@@ -252,7 +276,7 @@ int main(int argc, const char* argv[])
 
 			P = Kp * error;
 			I = Ki * integral;
-			D = Kd * ((pre_error - error) / sampling_time);
+			D = Kd * ((pre_error - error) / sampling_time * pow(10, -3));
 
 			U = P + I + D;
 
@@ -272,14 +296,22 @@ int main(int argc, const char* argv[])
 			}
 		}
 		else{	// If r not detected, lower the robot speed 
-			double D_r_red = D_r - 20;
-			double D_l_red = D_l - 20;
-			run.setMotorPwm(motor_r, D_r_red);
-			run.setMotorPwm(motor_l, D_l_red);
+			if (robot_switch == 0){
+				cout << "error sum : " << error << endl
+					<< "error now : " << error - pre_error << endl
+					<< "Left Moter Output : " << D_l << endl
+					<< "Right Motor Output : " << D_r << endl;
+			}
+			else{
+				double D_r_red = D_r - 20;
+				double D_l_red = D_l - 20;
+				run.setMotorPwm(motor_r, D_r_red);
+				run.setMotorPwm(motor_l, D_l_red);
+			}
         }
 
 		// recording left frame
-		rec << undistort_l;
+		rec << undistorted_l;
 
 		// compute process time and elapsed time
 		auto checkTime = chrono::system_clock::now();
@@ -294,9 +326,11 @@ int main(int argc, const char* argv[])
 		cout << elapsedTimeStr << " " << processingTimeStr << endl;
 
 		// preview 
+		Mat depth_map;
+		to_Color(depth,depth_map);
 		imshow("left", undistorted_l);
 		imshow("right", undistorted_r);
-		imshow("dep", cut);
+		imshow("depth", depth_map);
 		
 		// Loop break when the enter key is pressed
 		if (waitKey(15) == 13){
