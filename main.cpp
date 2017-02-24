@@ -130,7 +130,7 @@ int main(int argc, const char* argv[])
 
 	// Setting robot
 	// 1 : turn on , 0 : turn off
-	int robot_switch = 0;
+	int robot_switch = 1;
 	static RunCtrl run;
 	run.connect("COM6");
 	const int motor_r = 0;
@@ -197,15 +197,13 @@ int main(int argc, const char* argv[])
 
 		// 8.If cut elements value < 30, the elements change to 0
 		for (int y = 0; y < cut.rows; y++){
-			double *cutp = cut.ptr<double>(y);
 			for (int x = 0; x < depth_clone.cols; x++){
-				if (cutp[x] <= 0) cutp[x] = double(500);
+				if (cut.ptr<double>(y)[x] <= 0) cut.ptr<double>(y)[x] = double(0);
 			}
 		}
-		
 
 		// 9.Compute element average
-		vector<double> ave = { 0 };
+		vector<double> ave;
 		double ave_total = 0;
 		double total = 0;
 		int element_mum = 0;
@@ -216,7 +214,7 @@ int main(int argc, const char* argv[])
 					element_mum++;					// total number of element
 			}
 			double ave_comp = total / (double)element_mum;	// average of rows
-			ave.push_back = ave_comp;
+			ave.push_back(ave_comp);
 			ave_total += ave_comp;							// total of average value
 			total = 0;										// reset
 			element_mum = 0;								// reset
@@ -232,13 +230,13 @@ int main(int argc, const char* argv[])
 		}
 
 		double J = 0;
-		int zero_count = 1;
+		int zero_count = 0;
 		int zero_count_max = 0;
 		int zero_count_num = 0;
 
-		for (int ave_num = 0; ave_num < 608; ave_num++){
+		for (int ave_num = 1; ave_num < cut.cols; ave_num++){
 			// compute the difference from adjacent pixels
-			J = ave[ave_num + 1] - ave[ave_num];
+			J = ave[ave_num] - ave[ave_num - 1];
 			if (J == 0){
 				zero_count++;
 				// extract the maximum value of zero_count
@@ -249,7 +247,7 @@ int main(int argc, const char* argv[])
 
 			}
 			else{
-				zero_count = 1;						//reset
+				zero_count = 0;						//reset
 			}
 		}
 
@@ -326,11 +324,11 @@ int main(int argc, const char* argv[])
 		cout << elapsedTimeStr << " " << processingTimeStr << endl;
 
 		// preview 
-		Mat depth_map;
-		to_Color(depth,depth_map);
+		//Mat depth_map;
+		//to_Color(depth,depth_map);
 		imshow("left", undistorted_l);
 		imshow("right", undistorted_r);
-		imshow("depth", depth_map);
+		imshow("depth", depth);
 		
 		// Loop break when the enter key is pressed
 		if (waitKey(15) == 13){
